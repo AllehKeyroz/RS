@@ -1,0 +1,19 @@
+# Ignorar dependências e artefatos de build locais
+node_modules
+.next
+
+# Ignorar arquivos do Docker
+Dockerfile
+.dockerignore
+
+# Ignorar logs e arquivos de ambiente
+*.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignorar arquivos do Git e VSCode
+.git
+.gitignore
+.vscode
