@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { storeWebhookData, getAgentsState, updateAgentsState } from '../../actions';
-import { Qualification } from '../../types';
+import { Qualification } from '../../../types';
 
 export async function POST(req: NextRequest) {
   try {
