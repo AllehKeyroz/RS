@@ -28,9 +28,7 @@ export default function Home() {
 
   const loadAgentsFromState = useCallback(async () => {
       const stateAgents = await getAgentsState();
-      if(stateAgents.length > 0){
-          setAgents(stateAgents);
-      }
+      setAgents(stateAgents);
   }, []);
 
   useEffect(() => {
@@ -79,8 +77,7 @@ export default function Home() {
       setError("Por favor, insira uma chave de API.");
       setAgents([]);
       return;
-    }
-    await storeApiKey(apiKey);
+    n    await storeApiKey(apiKey);
     toast({
       title: "Sucesso!",
       description: "A chave de API foi salva.",
