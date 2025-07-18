@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         }
         await updateAgentsState(agents); // Save the updated state
         console.log(`No agents in ${targetQualification}, lead assigned to any available agent: ${assignedAgent.name}`);
-        return NextResponse.json({ message: 'Webhook received and lead assigned to any available agent', assignedAgent: assignedAgent.name }, { status: 200 });
+        return NextResponse.json({ message: 'Webhook received and lead assigned to any available agent', assignedAgent: { name: assignedAgent.name, id: assignedAgent.id } }, { status: 200 });
       } else {
         console.log('No available agents at all to assign lead.');
         return NextResponse.json({ message: 'No available agents to assign lead' }, { status: 200 });
