@@ -77,7 +77,8 @@ export default function Home() {
       setError("Por favor, insira uma chave de API.");
       setAgents([]);
       return;
-    n    await storeApiKey(apiKey);
+    }
+    await storeApiKey(apiKey);
     toast({
       title: "Sucesso!",
       description: "A chave de API foi salva.",
