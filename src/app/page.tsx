@@ -94,6 +94,7 @@ export default function Home() {
       setError(null);
       const fetchedAgents = await fetchAgents(key);
       setAgents(fetchedAgents);
+      await updateAgentsState(fetchedAgents); // Salva os agentes buscados no estado
     } catch (e: any) {
       setError(e.message || 'Falha ao carregar agentes.');
       setAgents([]); // Clear agents on error
