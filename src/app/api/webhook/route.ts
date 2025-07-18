@@ -10,17 +10,6 @@ export async function POST(req: NextRequest) {
     await storeWebhookData(data);
 
     let agents = await getAgentsState();
-    console.log('Agents received by webhook:', agents);
-    if (agents.length === 0) {
-      // Fallback: if no agents are in state, initialize with dummy data
-      agents = [
-        { id: 'agent1', name: 'Agente A', isAvailable: true, qualification: Qualification.LIDER, leadCount: 0 },
-        { id: 'agent2', name: 'Agente B', isAvailable: true, qualification: Qualification.EXPERT, leadCount: 0 },
-        { id: 'agent3', name: 'Agente C', isAvailable: false, qualification: Qualification.RAZOAVEL, leadCount: 0 },
-        { id: 'agent4', name: 'Agente D', isAvailable: true, qualification: Qualification.INICIANTE, leadCount: 0 },
-      ];
-      await updateAgentsState(agents); // Save initial dummy agents to state
-    }
 
     // Determine qualification based on percentages
     const rand = Math.random() * 100;
