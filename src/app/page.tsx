@@ -28,7 +28,9 @@ export default function Home() {
 
   const loadAgentsFromState = useCallback(async () => {
       const stateAgents = await getAgentsState();
-      setAgents(stateAgents);
+      if(stateAgents.length > 0){
+          setAgents(stateAgents);
+      }
   }, []);
 
   useEffect(() => {
