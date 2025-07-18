@@ -66,10 +66,13 @@ export async function fetchLatestWebhook(): Promise<any | undefined> {
 }
 
 export async function updateAgentsState(agents: Agent[]): Promise<void> {
+  console.log('Saving agents to cookies:', agents);
   cookies().set(AGENTS_STATE_COOKIE, JSON.stringify(agents), { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
 }
 
 export async function getAgentsState(): Promise<Agent[]> {
-  const data = cookies().get(AGENTS_STATE_COOKIE)?.value;
-  return data ? JSON.parse(data) : [];
+  const data = (await cookies()).get(AGENTS_STATE_COOKIE)?.value;
+  const parsedData = data ? JSON.parse(data) : [];
+  console.log('Reading agents from cookies:', parsedData);
+  return parsedData;
 }

@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
     await storeWebhookData(data);
 
     let agents = await getAgentsState();
+    console.log('Agents received by webhook:', agents);
     if (agents.length === 0) {
       // Fallback: if no agents are in state, initialize with dummy data
       agents = [
