@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, AlertCircle, RefreshCw, Copy, Check as CheckIcon, KeyRound, Save } from 'lucide-react';
-import { fetchAgents, fetchLatestWebhook, storeApiKey, getApiKey, updateAgentsState, getAgentsState, type Agent } from './actions';
+import { fetchAgents, fetchLatestWebhook, storeApiKey, getApiKey, updateAgentsState, getAgentsState } from './actions';
+import { Qualification, type Agent } from '../types';
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
 export default function Home() {
@@ -125,8 +127,8 @@ export default function Home() {
   const handleAgentUpdate = (agentId: string, field: keyof Agent, value: string | boolean) => {
     const updatedAgents = agents.map(agent => {
         if (agent.id === agentId) {
-          const updatedValue = typeof value === 'string' && (field === 'score' || field === 'leadCount')
-            ? parseInt(value, 10) || 0
+          const updatedValue = (field === 'leadCount')
+            ? parseInt(value as string, 10) || 0
             : value;
           return { ...agent, [field]: updatedValue };
         }
@@ -242,7 +244,7 @@ export default function Home() {
                           <TableRow>
                             <TableHead className="w-[80px]">Disponível</TableHead>
                             <TableHead>Nome</TableHead>
-                            <TableHead>Pontuação</TableHead>
+                            <TableHead>Qualificação</TableHead>
                             <TableHead className="text-center">Leads</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -258,7 +260,18 @@ export default function Home() {
                               </TableCell>
                               <TableCell className="font-medium">{agent.name}</TableCell>
                               <TableCell>
-                                <Input type="number" value={agent.score} onChange={(e) => handleAgentUpdate(agent.id, 'score', e.target.value)} className="w-20 h-9" />
+                                <Select onValueChange={(value) => handleAgentUpdate(agent.id, 'qualification', value as Qualification)} value={agent.qualification}>
+                                  <SelectTrigger className="w-[180px]">
+                                    <SelectValue placeholder="Selecione a qualificação" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.values(Qualification).map((qual) => (
+                                      <SelectItem key={qual} value={qual}>
+                                        {qual}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell className="text-center font-bold text-lg">
                                 {agent.leadCount}
