@@ -14,6 +14,7 @@ import { type Agent } from '../types';
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { format } from 'date-fns';
 
 // Define a type for the structured webhook data
 type WebhookData = {
@@ -35,6 +36,7 @@ type WebhookData = {
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [apiKey, setApiKey] = useState('');
+  const [bearerToken, setBearerToken] = useState('');
   const [webhookResponse, setWebhookResponse] = useState<WebhookData | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
@@ -79,6 +81,10 @@ export default function Home() {
         }
         const distributionEnabled = await getDistributionEnabled();
         setIsDistributionEnabled(distributionEnabled);
+        const storedBearerToken = await getBearerToken();
+        if (storedBearerToken) {
+          setBearerToken(storedBearerToken);
+        }
     };
     loadInitialData();
 
@@ -116,6 +122,7 @@ export default function Home() {
       return;
     }
     await storeApiKey(apiKey);
+    await storeBearerToken(bearerToken);
     await storeDistributionEnabled(isDistributionEnabled);
     toast({
       title: "Sucesso!",
@@ -244,6 +251,20 @@ export default function Home() {
                           value={apiKey}
                           onChange={(e) => setApiKey(e.target.value)}
                           placeholder="Cole sua chave de API aqui"
+                          className="text-sm bg-secondary border-border/60"
+                      />
+                  </div>
+              </div>
+              <div>
+                  <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <KeyRound /> Chave Bearer para Atualização de Contato
+                  </label>
+                   <div className="flex items-center space-x-2">
+                      <Input 
+                          type="password"
+                          value={bearerToken}
+                          onChange={(e) => setBearerToken(e.target.value)}
+                          placeholder="Cole sua chave Bearer aqui"
                           className="text-sm bg-secondary border-border/60"
                       />
                   </div>

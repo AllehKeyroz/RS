@@ -5,6 +5,7 @@ import { Agent } from '../types';
 const AGENTS_FILE = path.join(process.cwd(), 'data', 'agents.json');
 const WEBHOOK_FILE = path.join(process.cwd(), 'data', 'webhook.json');
 const DISTRIBUTION_SETTINGS_FILE = path.join(process.cwd(), 'data', 'distributionSettings.json');
+const BEARER_TOKEN_FILE = path.join(process.cwd(), 'data', 'bearerToken.json');
 
 async function ensureDataDirectory() {
   const dataDir = path.join(process.cwd(), 'data');
@@ -72,6 +73,25 @@ export async function getDistributionSettings(): Promise<{ isDistributionEnabled
       return { isDistributionEnabled: true }; // Default to enabled if file not found
     }
     console.error('Failed to read distribution settings file:', error);
+    throw error;
+  }
+}
+
+export async function saveBearerToken(token: string): Promise<void> {
+  await ensureDataDirectory();
+  await fs.writeFile(BEARER_TOKEN_FILE, JSON.stringify({ bearerToken: token }, null, 2));
+}
+
+export async function getBearerToken(): Promise<string | undefined> {
+  await ensureDataDirectory();
+  try {
+    const data = await fs.readFile(BEARER_TOKEN_FILE, 'utf8');
+    return JSON.parse(data).bearerToken;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return undefined; // File not found, return undefined
+    }
+    console.error('Failed to read bearer token file:', error);
     throw error;
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { storeWebhookData, getAgentsState, updateAgentsState, getDistributionEnabled, getApiKey } from '../../actions';
+import { storeWebhookData, getAgentsState, updateAgentsState, getDistributionEnabled, getBearerToken } from '../../actions';
 
 async function updateGoHighLevelContact(contactId: string, assignedAgentId: string, apiKey: string): Promise<void> {
   const url = `https://services.leadconnectorhq.com/contacts/${contactId}`;
@@ -80,12 +80,12 @@ export async function POST(req: NextRequest) {
         await updateAgentsState(agents);
 
         // Attempt to update GoHighLevel contact
-        const apiKey = await getApiKey();
+        const bearerToken = await getBearerToken();
         const contactId = leadData.id; // Correctly extracting contact ID from top-level leadData
 
-        if (apiKey && contactId) {
+        if (bearerToken && contactId) {
           try {
-            await updateGoHighLevelContact(contactId, assignedAgent.id, apiKey);
+            await updateGoHighLevelContact(contactId, assignedAgent.id, bearerToken);
             console.log(`Contato ${contactId} atualizado no GoHighLevel com agente ${assignedAgent.name}`);
           } catch (updateError: any) {
             console.error('Erro ao atualizar contato no GoHighLevel:', updateError);

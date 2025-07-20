@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers';
 import { Agent } from '../types';
-import { saveAgents, getSavedAgents, saveWebhookData, getSavedWebhookData, saveDistributionSettings, getDistributionSettings } from '../lib/persistence';
+import { saveAgents, getSavedAgents, saveWebhookData, getSavedWebhookData, saveDistributionSettings, getDistributionSettings, saveBearerToken, getBearerToken as getBearerTokenFromPersistence } from '../lib/persistence';
 
 const API_KEY_COOKIE = 'gohighlevel_api_key';
 
@@ -98,4 +98,12 @@ export async function storeDistributionEnabled(enabled: boolean): Promise<void> 
 export async function getDistributionEnabled(): Promise<boolean> {
   const settings = await getDistributionSettings();
   return settings.isDistributionEnabled;
+}
+
+export async function storeBearerToken(token: string): Promise<void> {
+  await saveBearerToken(token);
+}
+
+export async function getBearerToken(): Promise<string | undefined> {
+  return await getBearerTokenFromPersistence();
 }
