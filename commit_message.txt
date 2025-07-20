@@ -1,0 +1,4 @@
+feat: Inclui o ID do agente na resposta do webhook
+
+O webhook agora retorna o ID do agente atribuído, além do nome,
+para facilitar a identificação e o processamento no lado do cliente.

@@ -1,8 +1,8 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { Qualification, Agent } from '../types';
-import { saveAgents, getSavedAgents, saveWebhookData, getSavedWebhookData } from '../lib/persistence';
+import { Agent } from '../types';
+import { saveAgents, getSavedAgents, saveWebhookData, getSavedWebhookData, saveDistributionSettings, getDistributionSettings } from '../lib/persistence';
 
 const API_KEY_COOKIE = 'gohighlevel_api_key';
 
@@ -43,7 +43,7 @@ export async function fetchAgents(apiKey: string): Promise<Agent[]> {
       id: user.id,
       name: `${user.firstName} ${user.lastName}`,
       isAvailable: user.availability ?? true,
-      qualification: Qualification.INICIANTE, // Default, will be overridden by saved state
+      distributionPercentage: 0, // Default, will be overridden by saved state
       leadCount: 0, // Default, will be overridden by saved state
     }));
 
@@ -58,7 +58,7 @@ export async function fetchAgents(apiKey: string): Promise<Agent[]> {
       if (savedAgent) {
         return {
           ...ghlAgent,
-          qualification: savedAgent.qualification,
+          distributionPercentage: savedAgent.distributionPercentage,
           leadCount: savedAgent.leadCount,
         };
       }
@@ -89,4 +89,13 @@ export async function updateAgentsState(agents: Agent[]): Promise<void> {
 
 export async function getAgentsState(): Promise<Agent[]> {
   return await getSavedAgents();
+}
+
+export async function storeDistributionEnabled(enabled: boolean): Promise<void> {
+  await saveDistributionSettings(enabled);
+}
+
+export async function getDistributionEnabled(): Promise<boolean> {
+  const settings = await getDistributionSettings();
+  return settings.isDistributionEnabled;
 }

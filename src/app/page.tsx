@@ -1,30 +1,61 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, AlertCircle, RefreshCw, Copy, Check as CheckIcon, KeyRound, Save } from 'lucide-react';
-import { fetchAgents, fetchLatestWebhook, storeApiKey, getApiKey, updateAgentsState, getAgentsState } from './actions';
-import { Qualification, type Agent } from '../types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, AlertCircle, RefreshCw, Copy, Check as CheckIcon, KeyRound, Save, AlertTriangle, CheckCircle2, Users, Settings, User, Mail, Phone, CalendarIcon, Info } from 'lucide-react';
+import { fetchAgents, fetchLatestWebhook, storeApiKey, getApiKey, updateAgentsState, getAgentsState, storeDistributionEnabled, getDistributionEnabled } from './actions';
+import { type Agent } from '../types';
 import { useToast } from "@/hooks/use-toast";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
+// Define a type for the structured webhook data
+type WebhookData = {
+  leadData: {
+    name?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    [key: string]: any; // Allow other properties
+  };
+  assignment: {
+    assignedAgentName: string;
+    timestamp: string;
+    status: string;
+  };
+};
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [apiKey, setApiKey] = useState('');
-  const [webhookResponse, setWebhookResponse] = useState('Nenhum webhook recebido ainda. Dispare um evento da GoHighLevel para o endpoint da aplicação.');
+  const [webhookResponse, setWebhookResponse] = useState<WebhookData | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showUnavailableAgents, setShowUnavailableAgents] = useState(true);
+  const [isDistributionEnabled, setIsDistributionEnabled] = useState(true);
   
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
-  const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
+  const [isLoadingWebhook, setIsLoadingWebhook] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const sortedAgents = [...agents].sort((a, b) => {
+    if (a.isAvailable && !b.isAvailable) return -1;
+    if (!a.isAvailable && b.isAvailable) return 1;
+    return 0;
+  });
+
+  const visibleAgents = showUnavailableAgents ? sortedAgents : sortedAgents.filter(a => a.isAvailable);
+
+  const totalDistribution = agents.reduce((sum, agent) => sum + (agent.distributionPercentage || 0), 0);
 
   const loadAgentsFromState = useCallback(async () => {
       const stateAgents = await getAgentsState();
@@ -38,7 +69,7 @@ export default function Home() {
       const url = `${window.location.origin}/api/webhook`;
       setWebhookUrl(url);
     }
-    const loadInitialKeyAndAgents = async () => {
+    const loadInitialData = async () => {
         const storedKey = await getApiKey();
         if (storedKey) {
             setApiKey(storedKey);
@@ -46,10 +77,11 @@ export default function Home() {
         } else {
             await loadAgentsFromState();
         }
+        const distributionEnabled = await getDistributionEnabled();
+        setIsDistributionEnabled(distributionEnabled);
     };
-    loadInitialKeyAndAgents();
+    loadInitialData();
 
-     // Poll for agent state changes
     const interval = setInterval(loadAgentsFromState, 5000);
     return () => clearInterval(interval);
 
@@ -76,16 +108,21 @@ export default function Home() {
 
   const handleSaveAndLoad = async () => {
     if (!apiKey) {
-      setError("Por favor, insira uma chave de API.");
-      setAgents([]);
+      toast({
+        title: "Chave de API necessária",
+        description: "Por favor, insira uma chave de API.",
+        variant: "destructive",
+      });
       return;
     }
     await storeApiKey(apiKey);
+    await storeDistributionEnabled(isDistributionEnabled);
     toast({
       title: "Sucesso!",
-      description: "A chave de API foi salva.",
+      description: "As configurações foram salvas.",
     });
     await loadAgents(apiKey);
+    setIsSettingsOpen(false);
   };
 
   const loadAgents = async (key: string) => {
@@ -94,49 +131,86 @@ export default function Home() {
       setError(null);
       const fetchedAgents = await fetchAgents(key);
       setAgents(fetchedAgents);
-      await updateAgentsState(fetchedAgents); // Salva os agentes buscados no estado
+      await updateAgentsState(fetchedAgents);
     } catch (e: any) {
       setError(e.message || 'Falha ao carregar agentes.');
-      setAgents([]); // Clear agents on error
+      setAgents([]);
     } finally {
       setIsLoadingAgents(false);
     }
   };
 
-  const loadWebhookData = async () => {
+  const loadWebhookData = useCallback(async () => {
     try {
       setIsLoadingWebhook(true);
       const data = await fetchLatestWebhook();
-      if (data) {
-        setWebhookResponse(JSON.stringify(data, null, 2));
-      } else {
-        setWebhookResponse('Nenhum webhook recebido ainda. Dispare um evento da GoHighLevel e clique em "Atualizar".');
-      }
-       await loadAgentsFromState(); // Refresh agent counts
+      setWebhookResponse(data || null);
+      await loadAgentsFromState();
     } catch (e: any) {
-      setWebhookResponse(JSON.stringify({ error: 'Falha ao buscar dados do webhook.', details: e.message }, null, 2));
+      console.error("Falha ao buscar dados do webhook:", e);
+      setWebhookResponse(null);
     } finally {
       setIsLoadingWebhook(false);
     }
-  };
+  },[loadAgentsFromState]);
 
   useEffect(() => {
-    loadWebhookData(); 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadWebhookData();
+  }, [loadWebhookData]);
 
-  const handleAgentUpdate = (agentId: string, field: keyof Agent, value: string | boolean) => {
+  const handleAgentUpdate = (agentId: string, field: keyof Agent, value: string | boolean | number) => {
     const updatedAgents = agents.map(agent => {
         if (agent.id === agentId) {
-          const updatedValue = (field === 'leadCount')
-            ? parseInt(value as string, 10) || 0
-            : value;
+          let updatedValue = value;
+          if (field === 'leadCount' || field === 'distributionPercentage') {
+            updatedValue = parseInt(value as string, 10);
+            if (isNaN(updatedValue)) {
+              updatedValue = 0;
+            }
+          }
           return { ...agent, [field]: updatedValue };
         }
         return agent;
       });
     setAgents(updatedAgents);
-    updateAgentsState(updatedAgents); // Update the state on the server
+    updateAgentsState(updatedAgents);
+  };
+
+  const handleDistributeEvenly = () => {
+    const availableAgents = agents.filter(agent => agent.isAvailable);
+    if (availableAgents.length === 0) {
+      toast({
+        title: "Nenhum agente disponível",
+        description: "Não há agentes disponíveis para distribuir a porcentagem.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const totalPercentage = 100;
+    const basePercentage = Math.floor(totalPercentage / availableAgents.length);
+    let remainder = totalPercentage % availableAgents.length;
+
+    const updatedAgents = agents.map(agent => {
+      if (agent.isAvailable) {
+        let percentage = basePercentage;
+        if (remainder > 0) {
+          percentage++;
+          remainder--;
+        }
+        return { ...agent, distributionPercentage: percentage };
+      } else {
+        return { ...agent, distributionPercentage: 0 };
+      }
+    });
+
+    setAgents(updatedAgents);
+    updateAgentsState(updatedAgents);
+
+    toast({
+      title: "Distribuição Aplicada",
+      description: `A porcentagem foi dividida igualmente entre ${availableAgents.length} agentes disponíveis.`,
+    });
   };
 
   const Title = ({ children }: { children: React.ReactNode }) => (
@@ -146,149 +220,224 @@ export default function Home() {
   );
   
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-center p-4 sm:p-8">
-      <div className="w-full max-w-7xl">
+    <main className="flex min-h-screen w-full flex-col items-center p-4 sm:p-8">
+      <div className="w-full max-w-7xl relative">
+        <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="absolute top-0 right-0 m-4">
+              <Settings className="h-6 w-6" />
+              <span className="sr-only">Abrir Configurações</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Configuração</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6 py-4">
+              <div>
+                  <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <KeyRound /> Chave da API GoHighLevel
+                  </label>
+                   <div className="flex items-center space-x-2">
+                      <Input 
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          placeholder="Cole sua chave de API aqui"
+                          className="text-sm bg-secondary border-border/60"
+                      />
+                  </div>
+              </div>
+              <div>
+                  <label className="text-sm font-medium mb-2">Endpoint do Webhook</label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                      Use esta URL para configurar o webhook de "Contato Criado" na GoHighLevel.
+                  </p>
+                  <div className="flex items-center space-x-2">
+                      <Input 
+                          readOnly 
+                          value={webhookUrl || "Carregando URL..."} 
+                          className="text-sm bg-secondary border-border/60"
+                      />
+                      <Button onClick={copyToClipboard} variant="outline" size="icon" disabled={!webhookUrl}>
+                          {isCopied ? <CheckIcon className="h-5 w-5 text-green-500" /> : <Copy className="h-5 w-5" />}
+                          <span className="sr-only">Copiar URL</span>
+                      </Button>
+                  </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="distribution-toggle" className="text-sm font-medium">Ativar Distribuição de Leads</Label>
+                <Switch
+                  id="distribution-toggle"
+                  checked={isDistributionEnabled}
+                  onCheckedChange={setIsDistributionEnabled}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleSaveAndLoad} disabled={isLoadingAgents}>
+                  {isLoadingAgents ? <Loader2 className="animate-spin" /> : <Save />}
+                  <span className="ml-2">Salvar e Carregar</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <header className="mb-8 text-center">
           <h1 className="font-headline text-5xl tracking-tight">Painel de Distribuição de Leads</h1>
           <p className="text-muted-foreground mt-2 text-lg">Monitore agentes e a chegada de novos leads.</p>
         </header>
 
-        <Card className="border-border/60 shadow-2xl shadow-black/20">
-          <CardContent className="p-6 md:p-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-12 gap-y-10">
-              
-              {/* Left Column */}
-              <div className="flex flex-col space-y-8">
-                 <section>
-                    <Title>Configuração</Title>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                                <KeyRound /> Chave da API GoHighLevel
-                            </label>
-                             <div className="flex items-center space-x-2">
-                                <Input 
-                                    type="password"
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder="Cole sua chave de API aqui"
-                                    className="text-sm bg-secondary border-border/60"
-                                />
-                                <Button onClick={handleSaveAndLoad} disabled={isLoadingAgents}>
-                                    {isLoadingAgents ? <Loader2 className="animate-spin" /> : <Save />}
-                                    <span className="ml-2">Salvar e Carregar</span>
-                                </Button>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium mb-2">Endpoint do Webhook</label>
-                            <p className="text-xs text-muted-foreground mb-2">
-                                Use esta URL para configurar o webhook de "Contato Criado" na GoHighLevel.
-                            </p>
-                            <div className="flex items-center space-x-2">
-                                <Input 
-                                    readOnly 
-                                    value={webhookUrl || "Carregando URL..."} 
-                                    className="text-sm bg-secondary border-border/60"
-                                />
-                                <Button onClick={copyToClipboard} variant="outline" size="icon" disabled={!webhookUrl}>
-                                    {isCopied ? <CheckIcon className="h-5 w-5 text-green-500" /> : <Copy className="h-5 w-5" />}
-                                    <span className="sr-only">Copiar URL</span>
-                                </Button>
-                            </div>
-                        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Lead Info */}
+          <div className="lg:col-span-1">
+            <Card className="border-border/60 shadow-2xl shadow-black/20 h-full">
+              <CardHeader>
+                <CardTitle className="flex justify-between items-center">
+                  Último Lead Recebido
+                  <Button onClick={loadWebhookData} disabled={isLoadingWebhook} variant="outline" size="icon">
+                     <RefreshCw className={`h-4 w-4 ${isLoadingWebhook ? 'animate-spin' : ''}`} />
+                     <span className="sr-only">Atualizar</span>
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoadingWebhook ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-8 w-3/4" />
+                    <Skeleton className="h-6 w-full" />
+                    <Skeleton className="h-6 w-full" />
+                    <Skeleton className="h-10 w-1/2 mt-4" />
+                  </div>
+                ) : webhookResponse ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <User className="text-muted-foreground" />
+                      <span className="font-semibold text-lg">{webhookResponse.leadData.name || `${webhookResponse.leadData.firstName} ${webhookResponse.leadData.lastName}` || 'Nome não disponível'}</span>
                     </div>
-                </section>
-                <section>
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-headline text-2xl">Último Lead Recebido</h3>
-                      <Button onClick={loadWebhookData} disabled={isLoadingWebhook} variant="outline" size="sm">
-                         <RefreshCw className={`h-4 w-4 ${isLoadingWebhook ? 'animate-spin' : ''}`} />
-                         <span className="ml-2">Atualizar</span>
-                      </Button>
+                    {webhookResponse.leadData.email && (
+                      <div className="flex items-center gap-3">
+                        <Mail className="text-muted-foreground" />
+                        <span className="text-muted-foreground">{webhookResponse.leadData.email}</span>
+                      </div>
+                    )}
+                    {webhookResponse.leadData.phone && (
+                      <div className="flex items-center gap-3">
+                        <Phone className="text-muted-foreground" />
+                        <span className="text-muted-foreground">{webhookResponse.leadData.phone}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-border/60 my-4"></div>
+                    <div className="flex items-center gap-3">
+                      <Info className="text-muted-foreground" />
+                      <span className="text-muted-foreground">{webhookResponse.assignment.status}</span>
                     </div>
-                    <pre className="bg-secondary p-4 rounded-md border border-border/60 text-sm font-code min-h-[260px] max-h-72 overflow-y-auto w-full">
-                      {isLoadingWebhook ? <span className="text-muted-foreground">Buscando...</span> : <code>{webhookResponse}</code>}
-                    </pre>
-                </section>
-              </div>
+                    <div className="flex items-center gap-3">
+                      <CalendarIcon className="text-muted-foreground" />
+                      <span className="text-muted-foreground">{format(new Date(webhookResponse.assignment.timestamp), "dd/MM/yyyy 'às' HH:mm")}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">Nenhum lead recebido ainda.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-              {/* Right Column */}
-              <div className="flex flex-col space-y-8">
-                <section>
-                  <Title>Status dos Agentes</Title>
-                   
-                  {isLoadingAgents ? (
-                    <div className="space-y-2">
-                       <p className="text-center text-muted-foreground flex items-center justify-center">
-                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                         Carregando agentes...
-                       </p>
-                       {[...Array(5)].map((_, i) => (
-                         <div key={i} className="flex items-center space-x-4 p-2">
-                            <Skeleton className="h-6 w-6 rounded-sm" />
-                            <div className="space-y-2 flex-1">
-                                <Skeleton className="h-4 w-3/4" />
-                            </div>
-                         </div>
-                       ))}
+          {/* Right Column - Agents Table */}
+          <div className="lg:col-span-2">
+            <Card className="border-border/60 shadow-2xl shadow-black/20 h-full">
+              <CardHeader>
+                <CardTitle className="flex justify-between items-center">
+                  Status dos Agentes
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Switch id="show-unavailable" checked={showUnavailableAgents} onCheckedChange={setShowUnavailableAgents} />
+                      <Label htmlFor="show-unavailable" className="text-sm font-normal">Mostrar indisponíveis</Label>
                     </div>
-                  ) : error ? (
-                    <div className="text-destructive-foreground bg-destructive/80 p-4 rounded-md flex items-center">
-                      <AlertCircle className="h-5 w-5 mr-3" />
-                      <span>{error}</span>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                       <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[80px]">Disponível</TableHead>
-                            <TableHead>Nome</TableHead>
-                            <TableHead>Qualificação</TableHead>
-                            <TableHead className="text-center">Leads</TableHead>
+                    <Button onClick={handleDistributeEvenly} variant="outline" size="sm">
+                      <Users className="mr-2 h-4 w-4" />
+                      Distribuir Igualmente
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoadingAgents ? (
+                  <div className="space-y-2 pt-4">
+                     <p className="text-center text-muted-foreground flex items-center justify-center">
+                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       Carregando agentes...
+                     </p>
+                     {[...Array(5)].map((_, i) => (
+                       <div key={i} className="flex items-center space-x-4 p-2">
+                          <Skeleton className="h-6 w-6 rounded-sm" />
+                          <div className="space-y-2 flex-1">
+                              <Skeleton className="h-4 w-3/4" />
+                          </div>
+                       </div>
+                     ))}
+                  </div>
+                ) : error ? (
+                  <div className="text-destructive-foreground bg-destructive/80 p-4 rounded-md flex items-center">
+                    <AlertCircle className="h-5 w-5 mr-3" />
+                    <span>{error}</span>
+                  </div>
+                ) : (
+                  <div>
+                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[80px]">Disponível</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead className="w-[150px]">Distribuição (%)</TableHead>
+                          <TableHead className="text-center">Leads</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleAgents.map((agent) => (
+                          <TableRow key={agent.id} className={!agent.isAvailable ? 'opacity-50' : ''}>
+                            <TableCell className="text-center">
+                              <Checkbox
+                                checked={agent.isAvailable}
+                                onCheckedChange={(checked) => handleAgentUpdate(agent.id, 'isAvailable', !!checked)}
+                                className="scale-125"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{agent.name}</TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                value={agent.distributionPercentage || 0}
+                                onChange={(e) => handleAgentUpdate(agent.id, 'distributionPercentage', e.target.value)}
+                                className="w-24 text-center bg-secondary"
+                                min="0"
+                                max="100"
+                                disabled={!agent.isAvailable}
+                              />
+                            </TableCell>
+                            <TableCell className="text-center font-bold text-lg">
+                              {agent.leadCount}
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {agents.map((agent) => (
-                            <TableRow key={agent.id}>
-                              <TableCell className="text-center">
-                                <Checkbox
-                                  checked={agent.isAvailable}
-                                  onCheckedChange={(checked) => handleAgentUpdate(agent.id, 'isAvailable', !!checked)}
-                                  className="scale-125"
-                                />
-                              </TableCell>
-                              <TableCell className="font-medium">{agent.name}</TableCell>
-                              <TableCell>
-                                <Select onValueChange={(value) => handleAgentUpdate(agent.id, 'qualification', value as Qualification)} value={agent.qualification}>
-                                  <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Selecione a qualificação" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Object.values(Qualification).map((qual) => (
-                                      <SelectItem key={qual} value={qual}>
-                                        {qual}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell className="text-center font-bold text-lg">
-                                {agent.leadCount}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <div className="mt-4 text-right pr-4">
+                        <div className={`flex items-center justify-end font-bold text-lg p-2 rounded-md ${totalDistribution === 100 ? 'text-green-500' : 'text-destructive'}`}>
+                            {totalDistribution === 100 ? <CheckCircle2 className="mr-2" /> : <AlertTriangle className="mr-2" />}
+                            <span>Total: {totalDistribution}%</span>
+                        </div>
+                        {totalDistribution !== 100 && (
+                            <p className="text-xs text-destructive mt-1">A soma das porcentagens de distribuição dos agentes disponíveis deve ser 100%.</p>
+                        )}
                     </div>
-                  )}
-                </section>
-              </div>
-
-            </div>
-          </CardContent>
-        </Card>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </main>
   );
