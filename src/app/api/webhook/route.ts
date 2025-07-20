@@ -1,5 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { storeWebhookData, getAgentsState, updateAgentsState, getDistributionEnabled } from '../../actions';
+import { storeWebhookData, getAgentsState, updateAgentsState, getDistributionEnabled, getApiKey } from '../../actions';
+
+async function updateGoHighLevelContact(contactId: string, assignedAgentId: string, apiKey: string): Promise<void> {
+  const url = `https://services.leadconnectorhq.com/contacts/${contactId}`;
+  const headers = {
+    'Version': '2021-04-15',
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  const body = JSON.stringify({
+    assignedTo: assignedAgentId,
+  });
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: headers,
+    body: body,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Falha ao atualizar contato ${contactId} no GoHighLevel: ${response.status} ${response.statusText} - ${errorBody}`);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,6 +78,23 @@ export async function POST(req: NextRequest) {
       if (agentIndex !== -1) {
         agents[agentIndex].leadCount += 1;
         await updateAgentsState(agents);
+
+        // Attempt to update GoHighLevel contact
+        const apiKey = await getApiKey();
+        const contactId = leadData.id; // Correctly extracting contact ID from top-level leadData
+
+        if (apiKey && contactId) {
+          try {
+            await updateGoHighLevelContact(contactId, assignedAgent.id, apiKey);
+            console.log(`Contato ${contactId} atualizado no GoHighLevel com agente ${assignedAgent.name}`);
+          } catch (updateError: any) {
+            console.error('Erro ao atualizar contato no GoHighLevel:', updateError);
+            assignmentStatus += ` (Erro ao atualizar GHL: ${updateError.message})`;
+          }
+        } else {
+          console.warn('Não foi possível atualizar contato no GoHighLevel: Chave de API ou ID do contato ausente.');
+          assignmentStatus += ' (Não foi possível atualizar GHL: API Key ou Contact ID ausente)';
+        }
       }
     } else if (distributionEnabled) {
       // If distribution is enabled but no agent could be assigned
