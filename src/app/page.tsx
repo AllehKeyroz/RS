@@ -122,7 +122,7 @@ export default function Home() {
       return;
     }
     await storeApiKey(apiKey);
-    await storeBearerToken(bearerToken);
+    await saveBearerToken(bearerToken);
     await storeDistributionEnabled(isDistributionEnabled);
     toast({
       title: "Sucesso!",
