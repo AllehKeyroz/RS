@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { storeWebhookData, getAgentsState, updateAgentsState, getDistributionEnabled, getBearerToken } from '../../actions';
 
-async function updateGoHighLevelContact(contactId: string, assignedAgentId: string, apiKey: string): Promise<void> {
+async function updateGoHighLevelContact(contactId: string, assignedAgentId: string, bearerToken: string): Promise<void> {
   const url = `https://services.leadconnectorhq.com/contacts/${contactId}`;
   const headers = {
     'Version': '2021-04-15',
-    'Authorization': `Bearer ${apiKey}`,
+    'Authorization': `Bearer ${bearerToken}`,
     'Content-Type': 'application/json',
   };
   const body = JSON.stringify({
