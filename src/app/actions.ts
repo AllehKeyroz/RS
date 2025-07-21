@@ -1,79 +1,11 @@
 'use server';
 
-import { cookies } from 'next/headers';
-import { Agent } from '../types';
-import { saveAgents, getSavedAgents, saveWebhookData, getSavedWebhookData, saveDistributionSettings, getDistributionSettings, saveBearerToken, getBearerToken as getBearerTokenFromPersistence } from '../lib/persistence';
+import { saveWebhookData, getSavedWebhookData, getCustomWebhookConfig } from '../lib/persistence';
+import { CustomWebhookConfig } from '../lib/persistence';
 
-const API_KEY_COOKIE = 'gohighlevel_api_key';
 
-export async function storeApiKey(apiKey: string): Promise<void> {
-  cookies().set(API_KEY_COOKIE, apiKey, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 24 * 7 }); // 1 week
-}
 
-export async function getApiKey(): Promise<string | undefined> {
-  return (await cookies()).get(API_KEY_COOKIE)?.value;
-}
 
-export async function fetchAgents(apiKey: string): Promise<Agent[]> {
-  if (!apiKey) {
-    return [];
-  }
-
-  const url = "https://rest.gohighlevel.com/v1/users/";
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Chave da API inválida ou não autorizada.');
-      }
-      const errorBody = await response.text();
-      throw new Error(`Erro ao buscar agentes: ${response.status} ${response.statusText} - ${errorBody}`);
-    }
-
-    const data = await response.json();
-    const goHighLevelAgents = data.users.map((user: any) => ({
-      id: user.id,
-      name: `${user.firstName} ${user.lastName}`,
-      isAvailable: user.availability ?? true,
-      distributionPercentage: 0, // Default, will be overridden by saved state
-      leadCount: 0, // Default, will be overridden by saved state
-    }));
-
-    // Get currently saved agents from persistence
-    const savedAgents = await getSavedAgents();
-    const savedAgentsMap = new Map<string, Agent>();
-    savedAgents.forEach(agent => savedAgentsMap.set(agent.id, agent));
-
-    // Merge GoHighLevel agents with saved agents
-    const mergedAgents: Agent[] = goHighLevelAgents.map((ghlAgent: Agent) => {
-      const savedAgent = savedAgentsMap.get(ghlAgent.id);
-      if (savedAgent) {
-        return {
-          ...ghlAgent,
-          distributionPercentage: savedAgent.distributionPercentage,
-          leadCount: savedAgent.leadCount,
-        };
-      }
-      return ghlAgent;
-    });
-
-    // Save the merged agents back to persistence
-    await saveAgents(mergedAgents);
-
-    return mergedAgents;
-  } catch (error: any) {
-    console.error('Falha ao buscar agentes:', error);
-    throw new Error(error.message);
-  }
-}
 
 export async function storeWebhookData(data: any): Promise<void> {
   await saveWebhookData(data);
@@ -83,27 +15,60 @@ export async function fetchLatestWebhook(): Promise<any | undefined> {
   return await getSavedWebhookData();
 }
 
-export async function updateAgentsState(agents: Agent[]): Promise<void> {
-  await saveAgents(agents);
+export async function saveCustomWebhookConfig(config: CustomWebhookConfig): Promise<void> {
+  await saveCustomWebhookConfig(config);
 }
 
-export async function getAgentsState(): Promise<Agent[]> {
-  return await getSavedAgents();
+export async function getCustomWebhookConfig(): Promise<CustomWebhookConfig | undefined> {
+  return await getCustomWebhookConfig();
 }
 
-export async function storeDistributionEnabled(enabled: boolean): Promise<void> {
-  await saveDistributionSettings(enabled);
-}
+export async function executeCustomWebhook(leadData: any): Promise<void> {
+  const config = await getCustomWebhookConfig();
 
-export async function getDistributionEnabled(): Promise<boolean> {
-  const settings = await getDistributionSettings();
-  return settings.isDistributionEnabled;
-}
+  if (!config || !config.url) {
+    console.warn("Configuração de webhook personalizado não encontrada ou URL ausente.");
+    return;
+  }
 
-export async function storeBearerToken(token: string): Promise<void> {
-  await saveBearerToken(token);
-}
+  // Replace placeholders in URL, headers, and body
+  let processedUrl = config.url;
+  let processedHeaders = { ...config.headers };
+  let processedBody = config.body;
 
-export async function getBearerToken(): Promise<string | undefined> {
-  return await getBearerTokenFromPersistence();
+  // Simple placeholder replacement (can be expanded for nested objects)
+  for (const key in leadData) {
+    const placeholder = new RegExp(`{{\s*leadData\.${key}\s*}}`, 'g');
+    if (typeof leadData[key] === 'string') {
+      processedUrl = processedUrl.replace(placeholder, leadData[key]);
+      processedBody = processedBody.replace(placeholder, leadData[key]);
+    }
+  }
+
+  // Replace placeholders in headers
+  for (const headerKey in processedHeaders) {
+    for (const dataKey in leadData) {
+      const placeholder = new RegExp(`{{\s*leadData\.${dataKey}\s*}}`, 'g');
+      if (typeof processedHeaders[headerKey] === 'string') {
+        processedHeaders[headerKey] = processedHeaders[headerKey].replace(placeholder, leadData[dataKey]);
+      }
+    }
+  }
+
+  try {
+    const response = await fetch(processedUrl, {
+      method: config.method,
+      headers: processedHeaders,
+      body: processedBody,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Falha ao executar webhook personalizado: ${response.status} ${response.statusText} - ${errorBody}`);
+    }
+    console.log("Webhook personalizado executado com sucesso.", await response.text());
+  } catch (error: any) {
+    console.error("Erro ao executar webhook personalizado:", error);
+    throw error;
+  }
 }

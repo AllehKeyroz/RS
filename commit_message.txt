@@ -1,8 +1,5 @@
-fix: Resolve erro de duplicação de nome e adiciona campo Bearer Token
+fix: Corrigido ReferenceError: storeBearerToken is not defined
 
-- Corrige o erro "defined multiple times" para `getBearerToken` em `actions.ts`
-  renomeando a importação de `persistence.ts`.
-- Adiciona um campo de entrada separado para a "Chave Bearer para Atualização de Contato"
-  no modal de configurações, permitindo a configuração de ambas as chaves.
-- Persiste a nova chave Bearer.
-- Garante que a função de atualização do GoHighLevel no webhook utilize a chave Bearer correta.
+A função `storeBearerToken` foi renomeada para `saveBearerToken` em `src/lib/persistence.ts`.
+Esta correção atualiza a chamada da função em `src/app/page.tsx` para `saveBearerToken`,
+resolvendo o erro de referência.

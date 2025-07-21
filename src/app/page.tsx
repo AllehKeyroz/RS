@@ -4,16 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, AlertCircle, RefreshCw, Copy, Check as CheckIcon, KeyRound, Save, AlertTriangle, CheckCircle2, Users, Settings, User, Mail, Phone, CalendarIcon, Info } from 'lucide-react';
-import { fetchAgents, fetchLatestWebhook, storeApiKey, getApiKey, updateAgentsState, getAgentsState, storeDistributionEnabled, getDistributionEnabled } from './actions';
-import { type Agent } from '../types';
+import { Loader2, RefreshCw, Copy, Check as CheckIcon, Save, Settings, User, Mail, Phone, CalendarIcon, Info } from 'lucide-react';
+import { fetchLatestWebhook, saveCustomWebhookConfig, getCustomWebhookConfig, executeCustomWebhook } from './actions';
+import { CustomWebhookConfig } from '../lib/persistence';
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from 'date-fns';
 
 // Define a type for the structured webhook data
@@ -26,45 +25,26 @@ type WebhookData = {
     phone?: string;
     [key: string]: any; // Allow other properties
   };
-  assignment: {
-    assignedAgentName: string;
-    timestamp: string;
-    status: string;
-  };
+  status: string;
+  timestamp: string;
 };
 
 export default function Home() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [apiKey, setApiKey] = useState('');
-  const [bearerToken, setBearerToken] = useState('');
   const [webhookResponse, setWebhookResponse] = useState<WebhookData | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showUnavailableAgents, setShowUnavailableAgents] = useState(true);
-  const [isDistributionEnabled, setIsDistributionEnabled] = useState(true);
   
-  const [isLoadingAgents, setIsLoadingAgents] = useState(false);
-  const [isLoadingWebhook, setIsLoadingWebhook] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const sortedAgents = [...agents].sort((a, b) => {
-    if (a.isAvailable && !b.isAvailable) return -1;
-    if (!a.isAvailable && b.isAvailable) return 1;
-    return 0;
+  const [customWebhookConfig, setCustomWebhookConfig] = useState<CustomWebhookConfig>({
+    method: 'POST',
+    url: '',
+    headers: {},
+    body: '',
   });
-
-  const visibleAgents = showUnavailableAgents ? sortedAgents : sortedAgents.filter(a => a.isAvailable);
-
-  const totalDistribution = agents.reduce((sum, agent) => sum + (agent.distributionPercentage || 0), 0);
-
-  const loadAgentsFromState = useCallback(async () => {
-      const stateAgents = await getAgentsState();
-      if(stateAgents.length > 0){
-          setAgents(stateAgents);
-      }
-  }, []);
+  const [isCustomWebhookConfigLoading, setIsCustomWebhookConfigLoading] = useState(true);
+  const [isSavingCustomWebhookConfig, setIsSavingCustomWebhookConfig] = useState(false);
+  const [isLoadingWebhook, setIsLoadingWebhook] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -72,26 +52,15 @@ export default function Home() {
       setWebhookUrl(url);
     }
     const loadInitialData = async () => {
-        const storedKey = await getApiKey();
-        if (storedKey) {
-            setApiKey(storedKey);
-            await loadAgents(storedKey);
-        } else {
-            await loadAgentsFromState();
+        setIsCustomWebhookConfigLoading(true);
+        const storedConfig = await getCustomWebhookConfig();
+        if (storedConfig) {
+          setCustomWebhookConfig(storedConfig);
         }
-        const distributionEnabled = await getDistributionEnabled();
-        setIsDistributionEnabled(distributionEnabled);
-        const storedBearerToken = await getBearerToken();
-        if (storedBearerToken) {
-          setBearerToken(storedBearerToken);
-        }
+        setIsCustomWebhookConfigLoading(false);
     };
     loadInitialData();
-
-    const interval = setInterval(loadAgentsFromState, 5000);
-    return () => clearInterval(interval);
-
-  }, [loadAgentsFromState]);
+  }, []);
 
   const copyToClipboard = () => {
     if (!webhookUrl) return;
@@ -112,38 +81,23 @@ export default function Home() {
     });
   };
 
-  const handleSaveAndLoad = async () => {
-    if (!apiKey) {
+  const handleSaveCustomWebhookConfig = async () => {
+    setIsSavingCustomWebhookConfig(true);
+    try {
+      await saveCustomWebhookConfig(customWebhookConfig);
       toast({
-        title: "Chave de API necessária",
-        description: "Por favor, insira uma chave de API.",
+        title: "Sucesso!",
+        description: "As configurações do webhook personalizado foram salvas.",
+      });
+      setIsSettingsOpen(false);
+    } catch (e: any) {
+      toast({
+        title: "Erro ao salvar",
+        description: e.message || "Não foi possível salvar as configurações do webhook personalizado.",
         variant: "destructive",
       });
-      return;
-    }
-    await storeApiKey(apiKey);
-    await saveBearerToken(bearerToken);
-    await storeDistributionEnabled(isDistributionEnabled);
-    toast({
-      title: "Sucesso!",
-      description: "As configurações foram salvas.",
-    });
-    await loadAgents(apiKey);
-    setIsSettingsOpen(false);
-  };
-
-  const loadAgents = async (key: string) => {
-    try {
-      setIsLoadingAgents(true);
-      setError(null);
-      const fetchedAgents = await fetchAgents(key);
-      setAgents(fetchedAgents);
-      await updateAgentsState(fetchedAgents);
-    } catch (e: any) {
-      setError(e.message || 'Falha ao carregar agentes.');
-      setAgents([]);
     } finally {
-      setIsLoadingAgents(false);
+      setIsSavingCustomWebhookConfig(false);
     }
   };
 
@@ -152,73 +106,17 @@ export default function Home() {
       setIsLoadingWebhook(true);
       const data = await fetchLatestWebhook();
       setWebhookResponse(data || null);
-      await loadAgentsFromState();
     } catch (e: any) {
       console.error("Falha ao buscar dados do webhook:", e);
       setWebhookResponse(null);
     } finally {
       setIsLoadingWebhook(false);
     }
-  },[loadAgentsFromState]);
+  },[]);
 
   useEffect(() => {
     loadWebhookData();
   }, [loadWebhookData]);
-
-  const handleAgentUpdate = (agentId: string, field: keyof Agent, value: string | boolean | number) => {
-    const updatedAgents = agents.map(agent => {
-        if (agent.id === agentId) {
-          let updatedValue = value;
-          if (field === 'leadCount' || field === 'distributionPercentage') {
-            updatedValue = parseInt(value as string, 10);
-            if (isNaN(updatedValue)) {
-              updatedValue = 0;
-            }
-          }
-          return { ...agent, [field]: updatedValue };
-        }
-        return agent;
-      });
-    setAgents(updatedAgents);
-    updateAgentsState(updatedAgents);
-  };
-
-  const handleDistributeEvenly = () => {
-    const availableAgents = agents.filter(agent => agent.isAvailable);
-    if (availableAgents.length === 0) {
-      toast({
-        title: "Nenhum agente disponível",
-        description: "Não há agentes disponíveis para distribuir a porcentagem.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const totalPercentage = 100;
-    const basePercentage = Math.floor(totalPercentage / availableAgents.length);
-    let remainder = totalPercentage % availableAgents.length;
-
-    const updatedAgents = agents.map(agent => {
-      if (agent.isAvailable) {
-        let percentage = basePercentage;
-        if (remainder > 0) {
-          percentage++;
-          remainder--;
-        }
-        return { ...agent, distributionPercentage: percentage };
-      } else {
-        return { ...agent, distributionPercentage: 0 };
-      }
-    });
-
-    setAgents(updatedAgents);
-    updateAgentsState(updatedAgents);
-
-    toast({
-      title: "Distribuição Aplicada",
-      description: `A porcentagem foi dividida igualmente entre ${availableAgents.length} agentes disponíveis.`,
-    });
-  };
 
   const Title = ({ children }: { children: React.ReactNode }) => (
     <h2 className="font-headline text-3xl text-info border-b-2 border-info/50 pb-3 mb-6">
@@ -238,36 +136,65 @@ export default function Home() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Configuração</DialogTitle>
+              <DialogTitle>Configuração do Webhook Personalizado</DialogTitle>
             </DialogHeader>
-            <div className="space-y-6 py-4">
+            <div className="space-y-4 py-4">
               <div>
-                  <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <KeyRound /> Chave da API GoHighLevel
-                  </label>
-                   <div className="flex items-center space-x-2">
-                      <Input 
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="Cole sua chave de API aqui"
-                          className="text-sm bg-secondary border-border/60"
-                      />
-                  </div>
+                <Label htmlFor="webhook-method" className="text-sm font-medium mb-2">Método HTTP</Label>
+                <Select
+                  value={customWebhookConfig.method}
+                  onValueChange={(value) => setCustomWebhookConfig({ ...customWebhookConfig, method: value })}
+                >
+                  <SelectTrigger id="webhook-method" className="w-full">
+                    <SelectValue placeholder="Selecione o método" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GET">GET</SelectItem>
+                    <SelectItem value="POST">POST</SelectItem>
+                    <SelectItem value="PUT">PUT</SelectItem>
+                    <SelectItem value="DELETE">DELETE</SelectItem>
+                    <SelectItem value="PATCH">PATCH</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                  <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <KeyRound /> Chave Bearer para Atualização de Contato
-                  </label>
-                   <div className="flex items-center space-x-2">
-                      <Input 
-                          type="password"
-                          value={bearerToken}
-                          onChange={(e) => setBearerToken(e.target.value)}
-                          placeholder="Cole sua chave Bearer aqui"
-                          className="text-sm bg-secondary border-border/60"
-                      />
-                  </div>
+                <Label htmlFor="webhook-url" className="text-sm font-medium mb-2">URL</Label>
+                <Input
+                  id="webhook-url"
+                  value={customWebhookConfig.url}
+                  onChange={(e) => setCustomWebhookConfig({ ...customWebhookConfig, url: e.target.value })}
+                  placeholder="https://api.example.com/webhook"
+                />
+              </div>
+              <div>
+                <Label htmlFor="webhook-headers" className="text-sm font-medium mb-2">Cabeçalhos (JSON)</Label>
+                <Textarea
+                  id="webhook-headers"
+                  value={JSON.stringify(customWebhookConfig.headers, null, 2)}
+                  onChange={(e) => {
+                    try {
+                      setCustomWebhookConfig({ ...customWebhookConfig, headers: JSON.parse(e.target.value) });
+                    } catch (error) {
+                      // Handle invalid JSON input
+                      console.error("Invalid JSON for headers:", error);
+                    }
+                  }}
+                  placeholder='{ "Content-Type": "application/json", "Authorization": "Bearer YOUR_TOKEN" }'
+                  rows={5}
+                />
+              </div>
+              <div>
+                <Label htmlFor="webhook-body" className="text-sm font-medium mb-2">Corpo da Requisição (JSON)</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Use placeholders como `{{leadData.firstName}}`, `{{leadData.email}}`, `{{leadData.phone}}` para dados do webhook original.
+                </p>
+                <Textarea
+                  id="webhook-body"
+                  value={customWebhookConfig.body}
+                  onChange={(e) => setCustomWebhookConfig({ ...customWebhookConfig, body: e.target.value })}
+                  placeholder='{ "name": "{{leadData.name}}", "email": "{{leadData.email}}" }'
+                  rows={10}
+                />
               </div>
               <div>
                   <label className="text-sm font-medium mb-2">Endpoint do Webhook</label>
@@ -286,30 +213,22 @@ export default function Home() {
                       </Button>
                   </div>
               </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="distribution-toggle" className="text-sm font-medium">Ativar Distribuição de Leads</Label>
-                <Switch
-                  id="distribution-toggle"
-                  checked={isDistributionEnabled}
-                  onCheckedChange={setIsDistributionEnabled}
-                />
-              </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleSaveAndLoad} disabled={isLoadingAgents}>
-                  {isLoadingAgents ? <Loader2 className="animate-spin" /> : <Save />}
-                  <span className="ml-2">Salvar e Carregar</span>
+              <Button onClick={handleSaveCustomWebhookConfig} disabled={isSavingCustomWebhookConfig || isCustomWebhookConfigLoading}>
+                  {isSavingCustomWebhookConfig ? <Loader2 className="animate-spin" /> : <Save />}
+                  <span className="ml-2">Salvar Configuração</span>
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         <header className="mb-8 text-center">
-          <h1 className="font-headline text-5xl tracking-tight">Painel de Distribuição de Leads</h1>
-          <p className="text-muted-foreground mt-2 text-lg">Monitore agentes e a chegada de novos leads.</p>
+          <h1 className="font-headline text-5xl tracking-tight">Painel de Webhook Personalizado</h1>
+          <p className="text-muted-foreground mt-2 text-lg">Monitore os últimos webhooks recebidos.</p>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column - Lead Info */}
           <div className="lg:col-span-1">
             <Card className="border-border/60 shadow-2xl shadow-black/20 h-full">
@@ -351,109 +270,15 @@ export default function Home() {
                     <div className="border-t border-border/60 my-4"></div>
                     <div className="flex items-center gap-3">
                       <Info className="text-muted-foreground" />
-                      <span className="text-muted-foreground">{webhookResponse.assignment.status}</span>
+                      <span className="text-muted-foreground">{webhookResponse.status}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <CalendarIcon className="text-muted-foreground" />
-                      <span className="text-muted-foreground">{format(new Date(webhookResponse.assignment.timestamp), "dd/MM/yyyy 'às' HH:mm")}</span>
+                      <span className="text-muted-foreground">{format(new Date(webhookResponse.timestamp), "dd/MM/yyyy 'às' HH:mm")}</span>
                     </div>
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-center py-8">Nenhum lead recebido ainda.</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Column - Agents Table */}
-          <div className="lg:col-span-2">
-            <Card className="border-border/60 shadow-2xl shadow-black/20 h-full">
-              <CardHeader>
-                <CardTitle className="flex justify-between items-center">
-                  Status dos Agentes
-                  <div className="flex items-center space-x-4">
-                    <div className="flex items-center space-x-2">
-                      <Switch id="show-unavailable" checked={showUnavailableAgents} onCheckedChange={setShowUnavailableAgents} />
-                      <Label htmlFor="show-unavailable" className="text-sm font-normal">Mostrar indisponíveis</Label>
-                    </div>
-                    <Button onClick={handleDistributeEvenly} variant="outline" size="sm">
-                      <Users className="mr-2 h-4 w-4" />
-                      Distribuir Igualmente
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoadingAgents ? (
-                  <div className="space-y-2 pt-4">
-                     <p className="text-center text-muted-foreground flex items-center justify-center">
-                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                       Carregando agentes...
-                     </p>
-                     {[...Array(5)].map((_, i) => (
-                       <div key={i} className="flex items-center space-x-4 p-2">
-                          <Skeleton className="h-6 w-6 rounded-sm" />
-                          <div className="space-y-2 flex-1">
-                              <Skeleton className="h-4 w-3/4" />
-                          </div>
-                       </div>
-                     ))}
-                  </div>
-                ) : error ? (
-                  <div className="text-destructive-foreground bg-destructive/80 p-4 rounded-md flex items-center">
-                    <AlertCircle className="h-5 w-5 mr-3" />
-                    <span>{error}</span>
-                  </div>
-                ) : (
-                  <div>
-                     <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[80px]">Disponível</TableHead>
-                          <TableHead>Nome</TableHead>
-                          <TableHead className="w-[150px]">Distribuição (%)</TableHead>
-                          <TableHead className="text-center">Leads</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {visibleAgents.map((agent) => (
-                          <TableRow key={agent.id} className={!agent.isAvailable ? 'opacity-50' : ''}>
-                            <TableCell className="text-center">
-                              <Checkbox
-                                checked={agent.isAvailable}
-                                onCheckedChange={(checked) => handleAgentUpdate(agent.id, 'isAvailable', !!checked)}
-                                className="scale-125"
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium">{agent.name}</TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                value={agent.distributionPercentage || 0}
-                                onChange={(e) => handleAgentUpdate(agent.id, 'distributionPercentage', e.target.value)}
-                                className="w-24 text-center bg-secondary"
-                                min="0"
-                                max="100"
-                                disabled={!agent.isAvailable}
-                              />
-                            </TableCell>
-                            <TableCell className="text-center font-bold text-lg">
-                              {agent.leadCount}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <div className="mt-4 text-right pr-4">
-                        <div className={`flex items-center justify-end font-bold text-lg p-2 rounded-md ${totalDistribution === 100 ? 'text-green-500' : 'text-destructive'}`}>
-                            {totalDistribution === 100 ? <CheckCircle2 className="mr-2" /> : <AlertTriangle className="mr-2" />}
-                            <span>Total: {totalDistribution}%</span>
-                        </div>
-                        {totalDistribution !== 100 && (
-                            <p className="text-xs text-destructive mt-1">A soma das porcentagens de distribuição dos agentes disponíveis deve ser 100%.</p>
-                        )}
-                    </div>
-                  </div>
                 )}
               </CardContent>
             </Card>
